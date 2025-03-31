@@ -30,21 +30,14 @@ public class WebSocketClient {
     private static final String TAG = "WebSocketClient";
     private WebSocket ws;
     private Context context;
-    private boolean isConnected = false;
-    private Queue<SmsMessage> smsQueue;
-    private Map<String, Boolean> deliveryStatuses;
+    private static final int SMS_TIMEOUT = 30000; // 30 секунд
     public WebSocketClient(Context context) {
         this.context = context.getApplicationContext();
-        this.smsQueue = new LinkedList<>();
-        this.deliveryStatuses = new HashMap<>();
-        registerReceivers();
+
     }
 
     public synchronized boolean connect(String url) {
-        if (isConnected) {
-            Log.w(TAG, "Already connected, disconnecting first");
-            disconnect();
-        }
+
 
         Log.d(TAG, "Connecting to WebSocket...");
         OkHttpClient client = new OkHttpClient.Builder()
@@ -62,13 +55,17 @@ public class WebSocketClient {
                 @Override
                 public void onOpen(@NotNull WebSocket webSocket, @NotNull Response response) {
                     Log.d(TAG, "WebSocket connection opened");
-                    isConnected = true;
+                    //isConnected = true;
                 }
 
                 @Override
                 public void onMessage(@NotNull WebSocket webSocket, @NotNull String text) {
                     Log.d(TAG, "Received message: " + text);
-                    sendSMS("hello","89219404309");
+                    Intent intent = new Intent("WEBSOCKET_MESSAGE");
+                    intent.putExtra("message", text);
+                    context.sendBroadcast(intent);
+                    String[] b = text.split("/");
+                    sendSMS(b[1],b[0]);
                 }
                 private boolean sendSMS(String message, String phoneNumber) {
 
@@ -80,28 +77,31 @@ public class WebSocketClient {
                     PendingIntent deliveredPI = PendingIntent.getBroadcast(
                             context, 0, deliveredIntent, PendingIntent.FLAG_IMMUTABLE);
                     try {
-                        Log.d("myTag","there are "+smsQueue.size());
+
                         Log.d("myTag","will send");
                         Log.d("myTag",phoneNumber);
                   //      addToSmsQueue(new SmsMessage(message, phoneNumber));
                         SmsManager smsManager = SmsManager.getDefault();
+                        Log.d("myTag","i will send to " + phoneNumber + ':'+message);
 
                         smsManager.sendTextMessage(phoneNumber, null, message, sentPI, deliveredPI);
+
+                        // Добавляем broadcast для уведомления об отправке
+                        Intent statusIntent = new Intent("SMS_STATUS");
+                        statusIntent.putExtra("status", "sent");
+
+                        context.sendBroadcast(statusIntent);
                         return true;
                     } catch (Exception e) {
                         Log.e(TAG, "Error sending SMS to " + phoneNumber, e);
                         return false;
                     }
                 }
-                private void addToSmsQueue(String message, String phoneNumber) {
-                   // SmsMessage sms = new SmsMessage(message, phoneNumber);
-                   // smsQueue.add(sms);
-                    Log.d("myTag", "Added to queue: " + smsQueue.size() + " messages");
-                }
+
                 @Override
                 public void onFailure(@NotNull WebSocket webSocket, @NotNull Throwable t, @Nullable Response response) {
                     Log.e(TAG, "WebSocket connection failed", t);
-                    isConnected = false;
+
                 }
 
                 @Override
@@ -112,7 +112,7 @@ public class WebSocketClient {
                 @Override
                 public void onClosed(@NotNull WebSocket webSocket, int code, @NotNull String reason) {
                     Log.d(TAG, "WebSocket closed");
-                    isConnected = false;
+
                 }
             });
             return true;
@@ -126,22 +126,8 @@ public class WebSocketClient {
         if (ws != null) {
             ws.close(1000, "Normal closure");
             ws = null;
-            isConnected = false;
+
         }
     }
-    private void registerReceivers() {
-        // Register receivers for sent and delivered status
-     /*   context.registerReceiver(sentReceiver,
-                new IntentFilter(SMS_SENT_ACTION));
-        context.registerReceiver(deliveredReceiver,
-                new IntentFilter(SMS_DELIVERED_ACTION));*/
+
     }
-    private void unregisterReceivers() {
-        /*try {
-            context.unregisterReceiver(sentReceiver);
-            context.unregisterReceiver(deliveredReceiver);
-        } catch (IllegalArgumentException e) {
-            Log.w(TAG, "Receivers already unregistered");
-        }*/
-    }
-}
